@@ -38,10 +38,18 @@ const typeDefs = `#graphql
     timing: QueryTiming
   }
 
+  type SemesterStats {
+    semester: String!
+    totalCount: Int!
+    averageGrade: Float!
+  }
+
   type Query {
     getGrades(limit: Int, nextCursor: String): GradeResponse!
     getDepartmentAnalytics(department: String!): ShardStats!
     getStudentGrades(student_id: String!, department: String!): [GradeRecord!]!
+    searchStudentById(student_id: String!): [GradeRecord!]!
+    getSemesterAnalytics: [SemesterStats!]!
   }
 
   # This is the missing piece Apollo is looking for!

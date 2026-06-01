@@ -141,6 +141,35 @@ const resolvers = {
         .find({ department, student_id })
         .toArray();
       return records.map(r => ({ ...r, id: r._id.toString() }));
+    },
+
+    // 4. Search by student ID across all departments (no department filter)
+    searchStudentById: async (_, { student_id }, { db }) => {
+      const records = await db.collection('grades')
+        .find({ student_id })
+        .limit(50)
+        .toArray();
+      return records.map(r => ({ ...r, id: r._id.toString() }));
+    },
+
+    // 5. Semester-level analytics for trend visualization
+    getSemesterAnalytics: async (_, __, { db }) => {
+      const pipeline = [
+        {
+          $group: {
+            _id: "$semester",
+            totalCount: { $sum: 1 },
+            averageGrade: { $avg: "$grade" }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ];
+      const results = await db.collection('grades').aggregate(pipeline).toArray();
+      return results.map(r => ({
+        semester: r._id,
+        totalCount: r.totalCount,
+        averageGrade: Math.round(r.averageGrade * 100) / 100
+      }));
     }
   },
 

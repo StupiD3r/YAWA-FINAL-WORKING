@@ -1,13 +1,18 @@
-// server/src/kafka.js
-const { Kafka } = require('kafkajs');
+const { Kafka, Partitioners } = require('kafkajs');
 
-// Initialize the core Kafka client instance
 const kafka = new Kafka({
   clientId: 'academic-analytics-server',
-  brokers: ['localhost:9092'], // Points to our Docker Kafka container mapping
+  brokers: ['localhost:9092'],
 });
 
-const producer = kafka.producer();
+const producer = kafka.producer({ createPartitioner: Partitioners.LegacyPartitioner });
+const consumer = kafka.consumer({ groupId: 'academic-analytics-group' });
+
+let onEventCallback = null;
+
+function onGradeEvent(callback) {
+  onEventCallback = callback;
+}
 
 async function connectKafka() {
   try {
@@ -18,7 +23,27 @@ async function connectKafka() {
   }
 }
 
-// Helper utility to fire events into a specific topic channel easily
+async function startConsumer() {
+  try {
+    await consumer.connect();
+    await consumer.subscribe({ topic: 'grade-mutations', fromBeginning: false });
+    await consumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        try {
+          const parsed = JSON.parse(message.value.toString());
+          console.log(`📥 Kafka Consumed -> Topic: [${topic}] | Type: [${parsed.eventType}]`);
+          if (onEventCallback) onEventCallback(parsed);
+        } catch (err) {
+          console.error('⚠️ Failed to parse Kafka message:', err.message);
+        }
+      },
+    });
+    console.log('👂 Listening for grade-mutation events from Kafka...');
+  } catch (error) {
+    console.error('❌ Failed to start Kafka consumer:', error.message);
+  }
+}
+
 async function streamLogEvent(topic, eventType, data) {
   try {
     await producer.send({
@@ -40,4 +65,4 @@ async function streamLogEvent(topic, eventType, data) {
   }
 }
 
-module.exports = { connectKafka, streamLogEvent };
+module.exports = { connectKafka, startConsumer, streamLogEvent, onGradeEvent };
