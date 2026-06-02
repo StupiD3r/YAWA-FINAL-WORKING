@@ -10,6 +10,7 @@ const BATCH_SIZE = 10000; // Increased batch size for faster insertion // Effici
 
 const DEPARTMENTS = ['Computer Science', 'Data Science', 'Electrical Eng', 'Mechanical Eng', 'Mathematics', 'Physics'];
 const SEMESTERS = ['Fall 2024', 'Spring 2025', 'Fall 2025', 'Spring 2026'];
+const ALLOWED_GRADES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 5.0];
 const COURSES = {
   'Computer Science': ['CS101', 'CS201', 'CS301', 'CS401'],
   'Data Science': ['DS101', 'DS201', 'DS301', 'DS401'],
@@ -45,7 +46,7 @@ async function seedDatabase() {
           department: dept,
           course_code: course,
           semester: SEMESTERS[Math.floor(Math.random() * SEMESTERS.length)],
-          grade: faker.number.float({ min: 0.0, max: 4.0, multipleOf: 0.1 }),
+          grade: faker.helpers.arrayElement(ALLOWED_GRADES),
           credits: faker.helpers.arrayElement([3, 4]),
           updated_at: new Date()
         };

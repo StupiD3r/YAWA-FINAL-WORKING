@@ -69,7 +69,7 @@ const UserDashboard = ({ user, onLogout }) => {
     setLoading(true); setError(null);
     try {
       const data = await gql(`{ getGrades(limit: 200) { records { student_id student_name department course_code semester grade } } }`);
-      const sorted = data.getGrades.records.filter(r => r.grade < 2.0).sort((a, b) => a.grade - b.grade);
+      const sorted = data.getGrades.records.filter(r => r.grade === 3.0 || r.grade === 5.0).sort((a, b) => a.grade - b.grade);
       setAtRiskStudents(sorted);
     } catch (e) { setError(e.message); }
     setLoading(false);
