@@ -9,7 +9,11 @@ const resolvers = {
       const startTime = performance.now();
       const query = {};
       if (nextCursor) {
-        query._id = { $lt: new ObjectId(nextCursor) };
+        try {
+          query._id = { $lt: new ObjectId(nextCursor) };
+        } catch {
+          throw new Error('Invalid cursor format provided for pagination.');
+        }
       }
       if (semester) {
         query.semester = semester;
@@ -148,9 +152,14 @@ const resolvers = {
 
     // 4. Search by student ID across all departments (no department filter)
     searchStudentById: async (_, { student_id, limit = 100, nextCursor }, { db }) => {
+      const startTime = performance.now();
       const query = { student_id };
       if (nextCursor) {
-        query._id = { $lt: new ObjectId(nextCursor) };
+        try {
+          query._id = { $lt: new ObjectId(nextCursor) };
+        } catch {
+          throw new Error('Invalid cursor format provided for pagination.');
+        }
       }
       const records = await db.collection('grades')
         .find(query)
@@ -160,10 +169,17 @@ const resolvers = {
       const hasMore = records.length > limit;
       if (hasMore) records.pop();
       const nextCursorStr = hasMore ? records[records.length - 1]._id.toString() : null;
+      const endTime = performance.now();
       return {
         records: records.map(r => ({ ...r, id: r._id.toString() })),
         nextCursor: nextCursorStr,
-        hasMore
+        hasMore,
+        timing: {
+          textField: "Total Time in Milliseconds",
+          totalTimeMs: parseFloat((endTime - startTime).toFixed(2)),
+          dbQueryTimeMs: parseFloat((endTime - startTime).toFixed(2)),
+          cacheHit: false
+        }
       };
     },
 

@@ -99,11 +99,11 @@ const UserDashboard = ({ user, onLogout }) => {
     setLoading(false);
   }, []);
 
-  const fetchAtRisk = useCallback(async (cursor) => {
+  const fetchAtRisk = useCallback(async (cursor, semester) => {
     setLoading(true); setError(null);
     try {
       const cursorArg = cursor ? `, nextCursor: "${cursor}"` : '';
-      const semesterArg = selectedSemester ? `, semester: "${selectedSemester}"` : '';
+      const semesterArg = semester ? `, semester: "${semester}"` : '';
       const data = await gql(`{ getGrades(limit: 100${cursorArg}${semesterArg}) { records { student_id student_name department course_code semester grade } nextCursor hasMore } }`);
       const filtered = data.getGrades.records.filter(r => r.grade === 3.0 || r.grade === 5.0).sort((a, b) => a.grade - b.grade);
       setAtRiskStudents(filtered);
@@ -111,7 +111,7 @@ const UserDashboard = ({ user, onLogout }) => {
       setAtRiskHasMore(data.getGrades.hasMore);
     } catch (e) { setError(e.message); }
     setLoading(false);
-  }, [selectedSemester]);
+  }, []);
 
   const fetchAtRiskCount = useCallback(async (semester) => {
     try {
@@ -214,13 +214,13 @@ const UserDashboard = ({ user, onLogout }) => {
     const nextPage = atRiskPage + 1;
     atRiskCursors.current[nextPage] = atRiskNextCursor;
     setAtRiskPage(nextPage);
-    fetchAtRisk(atRiskNextCursor);
+    fetchAtRisk(atRiskNextCursor, selectedSemester);
   };
 
   const handleAtRiskPrev = () => {
     const prevPage = atRiskPage - 1;
     setAtRiskPage(prevPage);
-    fetchAtRisk(atRiskCursors.current[prevPage]);
+    fetchAtRisk(atRiskCursors.current[prevPage], selectedSemester);
   };
 
   const handleSemesterChange = (semester) => {
@@ -228,7 +228,7 @@ const UserDashboard = ({ user, onLogout }) => {
     setAtRiskPage(1);
     atRiskCursors.current = { 1: null };
     fetchAtRiskCount(semester || null);
-    fetchAtRisk(null);
+    fetchAtRisk(null, semester || null);
   };
 
   const handleReportNext = () => {
@@ -360,7 +360,7 @@ const UserDashboard = ({ user, onLogout }) => {
             />
             <button
               className="core-button search-button"
-              onClick={handleStudentSearch}
+              onClick={() => handleStudentSearch()}
               disabled={reportLoading}
             >
               {reportLoading ? 'Searching...' : 'Search'}
