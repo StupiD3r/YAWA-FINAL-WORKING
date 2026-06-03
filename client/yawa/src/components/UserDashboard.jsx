@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 
 const API = 'http://localhost:4000/graphql';
 
@@ -21,8 +21,25 @@ function gql(query) {
   }).then(r => r.json()).then(j => { if (j.errors) throw new Error(j.errors[0].message); return j.data; });
 }
 
-const UserDashboard = ({ user, onLogout }) => {
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="chart-tooltip">
+        <p className="chart-tooltip-label">{label}</p>
+        {payload.map((p, i) => (
+          <p key={i} className="chart-tooltip-value" style={{ color: p.color }}>
+            {p.name}: {typeof p.value === 'number' ? p.value.toFixed(2) : p.value}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+const UserDashboard = ({ onGoBack }) => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -65,6 +82,9 @@ const UserDashboard = ({ user, onLogout }) => {
   const [filterStudentName, setFilterStudentName] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterSemester, setFilterSemester] = useState('');
+
+  const searchTimeoutRef = useRef(null);
+  const subjectFilterTimeout = useRef(null);
 
   useEffect(() => {
     if (darkMode) {
@@ -136,16 +156,23 @@ const UserDashboard = ({ user, onLogout }) => {
     } catch {}
   }, []);
 
+  const subjectFetch = useCallback((sid, sname, dept, sem) => {
+    if (subjectFilterTimeout.current) clearTimeout(subjectFilterTimeout.current);
+    subjectFilterTimeout.current = setTimeout(() => {
+      setGradePage(1);
+      gradeCursors.current = { 1: null };
+      fetchGrades(null, sid, sname, dept, sem);
+    }, 350);
+  }, [fetchGrades]);
+
   useEffect(() => {
     if (activeTab === 'overview') {
       fetchOverview();
     } else if (activeTab === 'subject_analytics') {
-      setGradePage(1);
-      gradeCursors.current = { 1: null };
       gql(`{ getSemesterAnalytics { semester } }`).then(d => {
         setSemesters(d.getSemesterAnalytics.map(s => s.semester));
       }).catch(() => {});
-      fetchGrades(null, filterStudentId, filterStudentName, filterDept, filterSemester);
+      subjectFetch(filterStudentId, filterStudentName, filterDept, filterSemester);
     } else if (activeTab === 'at_risk') {
       gql(`{ getSemesterAnalytics { semester } }`).then(d => {
         const list = d.getSemesterAnalytics.map(s => s.semester);
@@ -159,7 +186,7 @@ const UserDashboard = ({ user, onLogout }) => {
     } else {
       setLoading(false);
     }
-  }, [activeTab, fetchOverview, fetchGrades, fetchAtRisk, fetchAtRiskCount, filterStudentId, filterStudentName, filterDept, filterSemester]);
+  }, [activeTab, fetchOverview, fetchAtRisk, fetchAtRiskCount, subjectFetch, filterStudentId, filterStudentName, filterDept, filterSemester]);
 
   useEffect(() => {
     if (activeTab === 'streams') {
@@ -183,11 +210,15 @@ const UserDashboard = ({ user, onLogout }) => {
   }, [activeTab]);
 
   const handleStudentSearch = async (cursor) => {
-    if (!searchId.trim()) return;
+    if (!searchId.trim()) {
+      setReportResults(null);
+      return;
+    }
     setReportLoading(true); setError(null);
-    setReportResults(null);
-    setUpdateSuccess(null);
-    setGradeInputs({});
+    if (!cursor) {
+      setUpdateSuccess(null);
+      setGradeInputs({});
+    }
     try {
       const cursorArg = cursor ? `, nextCursor: "${cursor}"` : '';
       const data = await gql(`{ searchStudentById(student_id: "${searchId.trim()}", limit: 100${cursorArg}) { records { id student_id student_name department course_code semester grade credits } nextCursor hasMore } }`);
@@ -197,6 +228,19 @@ const UserDashboard = ({ user, onLogout }) => {
       if (!cursor) { setReportPage(1); reportCursors.current = { 1: null }; }
     } catch (e) { setError(e.message); }
     setReportLoading(false);
+  };
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearchId(val);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      if (val.trim()) {
+        handleStudentSearch();
+      } else {
+        setReportResults(null);
+      }
+    }, 350);
   };
 
   const handleGradeUpdate = async (student_id, department, course_code) => {
@@ -262,6 +306,11 @@ const UserDashboard = ({ user, onLogout }) => {
     handleStudentSearch(reportCursors.current[prevPage]);
   };
 
+  const handleNavClick = (id) => {
+    setActiveTab(id);
+    setDrawerOpen(false);
+  };
+
   const PaginationBar = ({ page, hasMore, onPrev, onNext, of }) => (
     <div className="pagination-bar">
       <button className="page-btn" disabled={page <= 1} onClick={onPrev}>← Previous</button>
@@ -275,57 +324,63 @@ const UserDashboard = ({ user, onLogout }) => {
       <h2>Dashboard Overview</h2>
       <p className="pane-desc">Department analytics and semester trends across all records.</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+      <div className="kpi-grid">
         {deptStats.map(d => (
-          <div key={d.department} className="kpi-card" style={{ padding: '1.25rem' }}>
+          <div key={d.department} className="kpi-card">
             <h3>{d.department}</h3>
-            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0d9488' }}>{d.averageGrade.toFixed(2)}</div>
-            <div style={{ color: '#64748b', fontSize: '0.85rem' }}>{d.totalCount} records</div>
-            <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-              {d.timing.cacheHit ? '⚡ Cached' : `⏱ ${d.timing.totalTimeMs}ms`}
+            <div className="kpi-value">{d.averageGrade.toFixed(2)}</div>
+            <div className="kpi-records">{d.totalCount} records</div>
+            <div className="kpi-timing">
+              {d.timing.cacheHit ? 'Cached' : `${d.timing.totalTimeMs}ms`}
             </div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-        <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: 12, padding: '1.5rem' }}>
-          <h3 style={{ margin: '0 0 1rem', color: '#0d9488' }}>Average Grade by Department</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={deptStats}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="department" tick={{ fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
-              <YAxis domain={[0, 4]} />
-              <Tooltip />
-              <Bar dataKey="averageGrade" fill="#0d9488" radius={[4, 4, 0, 0]} />
+      <div className="charts-row">
+        <div className="chart-card">
+          <h3>Average Grade by Department</h3>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={deptStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+              <XAxis dataKey="department" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} angle={-20} textAnchor="end" height={60} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 4]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--chart-cursor)' }} />
+              <Bar dataKey="averageGrade" fill="var(--primary)" radius={[6, 6, 0, 0]} maxBarSize={50} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: 12, padding: '1.5rem' }}>
-          <h3 style={{ margin: '0 0 1rem', color: '#0d9488' }}>Grade Trend by Semester</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={semesterStats}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="semester" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
-              <YAxis domain={[0, 4]} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="averageGrade" stroke="#14b8a6" strokeWidth={2} dot={{ fill: '#14b8a6' }} />
-            </LineChart>
+        <div className="chart-card">
+          <h3>Grade Trend by Semester</h3>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={semesterStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+              <XAxis dataKey="semester" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} angle={-20} textAnchor="end" height={60} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 4]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="averageGrade" stroke="var(--accent)" strokeWidth={2.5} fill="var(--accent-alpha)" dot={{ fill: 'var(--accent)', strokeWidth: 0, r: 4 }} activeDot={{ r: 6, strokeWidth: 0, fill: 'var(--accent)' }} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
     </div>
   );
 
-  const renderSubjectAnalytics = () => (
+  const renderSubjectAnalytics = () => {
+    const sortedStudents = [...students].sort((a, b) => {
+      const na = parseInt(a.student_id.replace(/\D/g, ''), 10);
+      const nb = parseInt(b.student_id.replace(/\D/g, ''), 10);
+      return na - nb;
+    });
+
+    return (
     <div className="content-pane">
-      <div className="pane-meta-row">
+      <div className="pane-header-row">
         <div>
           <h2>Student Course Records</h2>
-          <p className="pane-desc">Live streaming dataset populated from your MongoDB collection.</p>
+          <p className="pane-desc">Filter records — results update as you type.</p>
         </div>
-        <div className="kpi-card">
+        <div className="kpi-card compact">
           <h3>Overall Grade Average:</h3>
           <div className="kpi-value">
             {students.length > 0
@@ -336,28 +391,24 @@ const UserDashboard = ({ user, onLogout }) => {
       </div>
 
       <div className="filter-bar">
-        <input
-          type="text"
-          className="filter-input"
-          placeholder="Student ID"
-          value={filterStudentId}
-          onChange={e => setFilterStudentId(e.target.value)}
-        />
-        <input
-          type="text"
-          className="filter-input"
-          placeholder="Student Name"
-          value={filterStudentName}
-          onChange={e => setFilterStudentName(e.target.value)}
-        />
-        <select className="filter-select" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
-          <option value="">All Departments</option>
-          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select className="filter-select" value={filterSemester} onChange={e => setFilterSemester(e.target.value)}>
-          <option value="">All Semesters</option>
-          {semesters.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <div className="filter-group">
+          <input type="text" className="filter-input" placeholder="Student ID" value={filterStudentId} onChange={e => setFilterStudentId(e.target.value)} />
+        </div>
+        <div className="filter-group">
+          <input type="text" className="filter-input" placeholder="Student Name" value={filterStudentName} onChange={e => setFilterStudentName(e.target.value)} />
+        </div>
+        <div className="filter-group">
+          <select className="filter-select" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+            <option value="">All Departments</option>
+            {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div className="filter-group">
+          <select className="filter-select" value={filterSemester} onChange={e => setFilterSemester(e.target.value)}>
+            <option value="">All Semesters</option>
+            {semesters.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="dataset-showcase-box">
@@ -368,27 +419,27 @@ const UserDashboard = ({ user, onLogout }) => {
           <div className="header-col-label">Semester</div>
           <div className="header-col-label">Grade</div>
         </div>
-        {loading && <div className="showcase-empty-state">Loading MongoDB matrices...</div>}
+        {loading && <div className="showcase-empty-state"><div className="loading-spinner" /> Loading records...</div>}
         {error && <div className="showcase-empty-state" style={{ color: '#f87171' }}>Error: {error}</div>}
-        {!loading && !error && students.length === 0 && <div className="showcase-empty-state">No student profiles found in MongoDB.</div>}
-        {!loading && !error && students.map((s, i) => (
-          <div key={s.id || i} className="showcase-table-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.1)' }}>
-            <div style={{ color: '#99f6e4' }}>{s.student_id}</div>
-            <div style={{ color: '#ffffff', fontWeight: 'bold' }}>{s.student_name}</div>
-            <div style={{ color: '#cbd5e1' }}>{s.department} ({s.course_code})</div>
-            <div style={{ color: '#cbd5e1' }}>{s.semester}</div>
-            <div style={{ color: '#99f6e4', fontWeight: 'bold' }}>{s.grade}</div>
+        {!loading && !error && sortedStudents.length === 0 && <div className="showcase-empty-state">No student records found.</div>}
+        {!loading && !error && sortedStudents.map((s, i) => (
+          <div key={s.id || i} className="showcase-row">
+            <div className="cell-id">{s.student_id}</div>
+            <div className="cell-name">{s.student_name}</div>
+            <div className="cell-dept">{s.department} ({s.course_code})</div>
+            <div className="cell-sem">{s.semester}</div>
+            <div className="cell-grade">{s.grade}</div>
           </div>
         ))}
       </div>
       <PaginationBar page={gradePage} hasMore={gradeHasMore} onPrev={handleGradePrev} onNext={handleGradeNext} />
     </div>
-  );
+  );};
 
   const renderStudentReports = () => (
     <div className="content-pane">
       <h2>Student Reports</h2>
-      <p className="pane-desc">Look up grades for a student by ID and update individual course grades.</p>
+      <p className="pane-desc">Type a student ID — results appear as you type.</p>
 
       <div className="student-search-section">
         <div className="search-input-wrap">
@@ -398,19 +449,23 @@ const UserDashboard = ({ user, onLogout }) => {
               type="text"
               className="search-field"
               value={searchId}
-              onChange={e => setSearchId(e.target.value)}
-              placeholder="e.g. STU897762"
-              onKeyDown={e => e.key === 'Enter' && handleStudentSearch()}
+              onChange={handleSearchChange}
+              placeholder="Type student ID..."
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+                  handleStudentSearch();
+                }
+              }}
             />
-            <button
-              className="core-button search-button"
-              onClick={() => handleStudentSearch()}
-              disabled={reportLoading}
-            >
-              {reportLoading ? 'Searching...' : 'Search'}
+            <button className="search-button" onClick={() => {
+              if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+              handleStudentSearch();
+            }} disabled={reportLoading}>
+              {reportLoading ? '...' : 'Search'}
             </button>
           </div>
-          <span className="search-helper">Enter a student ID like STU897762 or STU451239</span>
+          <span className="search-helper">Results update progressively as you type</span>
         </div>
         {error && <div className="search-error-inline">{error}</div>}
       </div>
@@ -502,14 +557,14 @@ const UserDashboard = ({ user, onLogout }) => {
 
   const renderAtRisk = () => (
     <div className="content-pane">
-      <div className="pane-meta-row">
+      <div className="pane-header-row">
         <div>
           <h2>At-Risk & Trends</h2>
           <p className="pane-desc">Students with grades below 2.0 — flagged for intervention.</p>
         </div>
-        <div className="kpi-card">
+        <div className="kpi-card compact risk">
           <h3>At-Risk Students:</h3>
-          <div className="kpi-value" style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 700 }}>{totalAtRiskCount}</div>
+          <div className="kpi-value">{totalAtRiskCount}</div>
         </div>
       </div>
       <div className="filter-bar">
@@ -528,17 +583,17 @@ const UserDashboard = ({ user, onLogout }) => {
           <div className="header-col-label">Semester</div>
           <div className="header-col-label">Grade</div>
         </div>
-        {loading && <div className="showcase-empty-state">Analyzing grade data...</div>}
+        {loading && <div className="showcase-empty-state"><div className="loading-spinner" /> Analyzing...</div>}
         {error && <div className="showcase-empty-state" style={{ color: '#f87171' }}>Error: {error}</div>}
         {!loading && !error && atRiskStudents.length === 0 && <div className="showcase-empty-state">No at-risk students found.</div>}
         {!loading && !error && atRiskStudents.map((s, i) => (
-          <div key={s.id || i} className="showcase-table-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.1)' }}>
-            <div style={{ color: '#99f6e4' }}>{s.student_id}</div>
-            <div style={{ color: '#ffffff', fontWeight: 'bold' }}>{s.student_name}</div>
-            <div style={{ color: '#cbd5e1' }}>{s.department}</div>
-            <div style={{ color: '#cbd5e1' }}>{s.course_code}</div>
-            <div style={{ color: '#cbd5e1' }}>{s.semester}</div>
-            <div style={{ color: '#f87171', fontWeight: 'bold' }}>{s.grade}</div>
+          <div key={s.id || i} className="showcase-row">
+            <div className="cell-id">{s.student_id}</div>
+            <div className="cell-name">{s.student_name}</div>
+            <div className="cell-dept">{s.department}</div>
+            <div className="cell-sem">{s.course_code}</div>
+            <div className="cell-sem">{s.semester}</div>
+            <div className="cell-grade risk">{s.grade}</div>
           </div>
         ))}
       </div>
@@ -550,15 +605,16 @@ const UserDashboard = ({ user, onLogout }) => {
     <div className="content-pane">
       <h2>Event Streams</h2>
       <p className="pane-desc">Real-time grade mutation events broadcast over Apache Kafka.</p>
-      <div className="dataset-showcase-box" style={{ minHeight: 300, padding: '1rem', fontFamily: 'monospace' }}>
+      <div className="dataset-showcase-box stream-box">
         {streamLog.length === 0 && (
-          <div style={{ color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', padding: '2rem', textAlign: 'center' }}>
+          <div className="stream-empty">
+            <div className="loading-spinner" style={{ margin: '0 auto 0.75rem' }} />
             Listening for grade mutation events via SSE...
           </div>
         )}
         {streamLog.map((entry, i) => (
-          <div key={i} style={{ color: '#cbd5e1', padding: '0.5rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem' }}>
-            <span style={{ color: '#99f6e4' }}>[{entry.time}]</span> {entry.msg}
+          <div key={i} className="stream-entry">
+            <span className="stream-time">[{entry.time}]</span> {entry.msg}
           </div>
         ))}
       </div>
@@ -575,23 +631,43 @@ const UserDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="dashboard-wrapper">
-      <aside className="dash-sidebar">
-        <div className="sidebar-logo">
-          <div className="logo-svg-icon">C</div>
+      {drawerOpen && <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />}
+      <aside className={`dash-drawer ${drawerOpen ? 'open' : ''}`}>
+        <div className="drawer-header">
+          <div className="drawer-logo">YW</div>
+          <button className="drawer-close" onClick={() => setDrawerOpen(false)}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
-        <nav className="sidebar-nav">
+        <nav className="drawer-nav">
           {NAV.map(item => (
             <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(item.id)}>
+              onClick={() => handleNavClick(item.id)}>
               {item.label}
             </button>
           ))}
         </nav>
-        <button onClick={onLogout} className="logout-button">Log Out</button>
+        <div className="drawer-footer">
+          <button className="drawer-back-btn" onClick={onGoBack}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Landing
+          </button>
+        </div>
       </aside>
       <main className="dash-main">
         <header className="dash-header">
-          <h1>Academic Performance Management</h1>
+          <div className="header-left">
+            <button className="hamburger-btn" onClick={() => setDrawerOpen(true)}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            </button>
+            <h1>Y.W Acad System</h1>
+          </div>
           <div className="header-actions">
             <button className="theme-toggle" onClick={() => setDarkMode(p => !p)} aria-label="Toggle theme">
               {darkMode ? (
@@ -600,10 +676,6 @@ const UserDashboard = ({ user, onLogout }) => {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
               )}
             </button>
-            <div className="header-profile">
-              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="Profile" className="avatar-img" />
-              <span>{user?.username || 'Guest'}</span>
-            </div>
           </div>
         </header>
         <section className="dash-content">
