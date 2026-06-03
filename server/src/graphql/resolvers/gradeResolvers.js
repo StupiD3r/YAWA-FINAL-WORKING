@@ -5,11 +5,14 @@ const { streamLogEvent } = require('../../kafka');
 const resolvers = {
   Query: {
     // 1. Paginated retrieval to cleanly handle large datasets safely
-    getGrades: async (_, { limit = 20, nextCursor }, { db }) => {
+    getGrades: async (_, { limit = 20, nextCursor, semester }, { db }) => {
       const startTime = performance.now();
       const query = {};
       if (nextCursor) {
         query._id = { $lt: new ObjectId(nextCursor) };
+      }
+      if (semester) {
+        query.semester = semester;
       }
 
       // Sort by descending ObjectId for predictable scrolling pagination
@@ -144,12 +147,24 @@ const resolvers = {
     },
 
     // 4. Search by student ID across all departments (no department filter)
-    searchStudentById: async (_, { student_id }, { db }) => {
+    searchStudentById: async (_, { student_id, limit = 100, nextCursor }, { db }) => {
+      const query = { student_id };
+      if (nextCursor) {
+        query._id = { $lt: new ObjectId(nextCursor) };
+      }
       const records = await db.collection('grades')
-        .find({ student_id })
-        .limit(50)
+        .find(query)
+        .sort({ _id: -1 })
+        .limit(limit + 1)
         .toArray();
-      return records.map(r => ({ ...r, id: r._id.toString() }));
+      const hasMore = records.length > limit;
+      if (hasMore) records.pop();
+      const nextCursorStr = hasMore ? records[records.length - 1]._id.toString() : null;
+      return {
+        records: records.map(r => ({ ...r, id: r._id.toString() })),
+        nextCursor: nextCursorStr,
+        hasMore
+      };
     },
 
     // 5. Semester-level analytics for trend visualization
@@ -170,6 +185,15 @@ const resolvers = {
         totalCount: r.totalCount,
         averageGrade: Math.round(r.averageGrade * 100) / 100
       }));
+    },
+
+    // 6. Count at-risk students, optionally filtered by semester
+    getAtRiskCount: async (_, { semester }, { db }) => {
+      const query = { grade: { $in: [3.0, 5.0] } };
+      if (semester) {
+        query.semester = semester;
+      }
+      return await db.collection('grades').countDocuments(query);
     }
   },
 

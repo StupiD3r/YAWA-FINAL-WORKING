@@ -19,7 +19,12 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [message, setMessage] = useState({ text: '', type: '' });
 
-// Place this inside your App() function, right near your other useEffect hook:
+useEffect(() => {
+  if (localStorage.getItem('theme') === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}, []);
+
 useEffect(() => {
   if (message.text) {
     // Start a timer to clear the message after 3 seconds
