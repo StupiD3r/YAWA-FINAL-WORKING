@@ -45,7 +45,7 @@ const typeDefs = `#graphql
   }
 
   type Query {
-    getGrades(limit: Int, nextCursor: String, semester: String): GradeResponse!
+    getGrades(limit: Int, nextCursor: String, semester: String, studentId: String, studentName: String, department: String): GradeResponse!
     getDepartmentAnalytics(department: String!): ShardStats!
     getStudentGrades(student_id: String!, department: String!): [GradeRecord!]!
     searchStudentById(student_id: String!, limit: Int, nextCursor: String): GradeResponse!

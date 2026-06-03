@@ -61,6 +61,11 @@ const UserDashboard = ({ user, onLogout }) => {
   const [semesters, setSemesters] = useState([]);
   const [totalAtRiskCount, setTotalAtRiskCount] = useState(0);
 
+  const [filterStudentId, setFilterStudentId] = useState('');
+  const [filterStudentName, setFilterStudentName] = useState('');
+  const [filterDept, setFilterDept] = useState('');
+  const [filterSemester, setFilterSemester] = useState('');
+
   useEffect(() => {
     if (darkMode) {
       document.documentElement.setAttribute('data-theme', 'dark');
@@ -87,11 +92,21 @@ const UserDashboard = ({ user, onLogout }) => {
     setLoading(false);
   }, []);
 
-  const fetchGrades = useCallback(async (cursor) => {
+  const buildFilterArgs = (studentId, studentName, dept, sem) => {
+    let args = '';
+    if (studentId) args += `, studentId: "${studentId}"`;
+    if (studentName) args += `, studentName: "${studentName}"`;
+    if (dept) args += `, department: "${dept}"`;
+    if (sem) args += `, semester: "${sem}"`;
+    return args;
+  };
+
+  const fetchGrades = useCallback(async (cursor, studentId, studentName, dept, sem) => {
     setLoading(true); setError(null);
     try {
       const cursorArg = cursor ? `, nextCursor: "${cursor}"` : '';
-      const data = await gql(`{ getGrades(limit: 100${cursorArg}) { records { student_id student_name department course_code semester grade } nextCursor hasMore } }`);
+      const filterArg = buildFilterArgs(studentId || '', studentName || '', dept || '', sem || '');
+      const data = await gql(`{ getGrades(limit: 100${cursorArg}${filterArg}) { records { student_id student_name department course_code semester grade } nextCursor hasMore } }`);
       setStudents(data.getGrades.records);
       setGradeNextCursor(data.getGrades.nextCursor);
       setGradeHasMore(data.getGrades.hasMore);
@@ -127,7 +142,10 @@ const UserDashboard = ({ user, onLogout }) => {
     } else if (activeTab === 'subject_analytics') {
       setGradePage(1);
       gradeCursors.current = { 1: null };
-      fetchGrades(null);
+      gql(`{ getSemesterAnalytics { semester } }`).then(d => {
+        setSemesters(d.getSemesterAnalytics.map(s => s.semester));
+      }).catch(() => {});
+      fetchGrades(null, filterStudentId, filterStudentName, filterDept, filterSemester);
     } else if (activeTab === 'at_risk') {
       gql(`{ getSemesterAnalytics { semester } }`).then(d => {
         const list = d.getSemesterAnalytics.map(s => s.semester);
@@ -141,7 +159,7 @@ const UserDashboard = ({ user, onLogout }) => {
     } else {
       setLoading(false);
     }
-  }, [activeTab, fetchOverview, fetchGrades, fetchAtRisk, fetchAtRiskCount]);
+  }, [activeTab, fetchOverview, fetchGrades, fetchAtRisk, fetchAtRiskCount, filterStudentId, filterStudentName, filterDept, filterSemester]);
 
   useEffect(() => {
     if (activeTab === 'streams') {
@@ -201,13 +219,13 @@ const UserDashboard = ({ user, onLogout }) => {
     const nextPage = gradePage + 1;
     gradeCursors.current[nextPage] = gradeNextCursor;
     setGradePage(nextPage);
-    fetchGrades(gradeNextCursor);
+    fetchGrades(gradeNextCursor, filterStudentId, filterStudentName, filterDept, filterSemester);
   };
 
   const handleGradePrev = () => {
     const prevPage = gradePage - 1;
     setGradePage(prevPage);
-    fetchGrades(gradeCursors.current[prevPage]);
+    fetchGrades(gradeCursors.current[prevPage], filterStudentId, filterStudentName, filterDept, filterSemester);
   };
 
   const handleAtRiskNext = () => {
@@ -316,6 +334,32 @@ const UserDashboard = ({ user, onLogout }) => {
           </div>
         </div>
       </div>
+
+      <div className="filter-bar">
+        <input
+          type="text"
+          className="filter-input"
+          placeholder="Student ID"
+          value={filterStudentId}
+          onChange={e => setFilterStudentId(e.target.value)}
+        />
+        <input
+          type="text"
+          className="filter-input"
+          placeholder="Student Name"
+          value={filterStudentName}
+          onChange={e => setFilterStudentName(e.target.value)}
+        />
+        <select className="filter-select" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+          <option value="">All Departments</option>
+          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select className="filter-select" value={filterSemester} onChange={e => setFilterSemester(e.target.value)}>
+          <option value="">All Semesters</option>
+          {semesters.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
       <div className="dataset-showcase-box">
         <div className="showcase-table-header">
           <div className="header-col-label">ID</div>

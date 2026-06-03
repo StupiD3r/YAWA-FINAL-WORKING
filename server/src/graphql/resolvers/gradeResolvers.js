@@ -5,7 +5,7 @@ const { streamLogEvent } = require('../../kafka');
 const resolvers = {
   Query: {
     // 1. Paginated retrieval to cleanly handle large datasets safely
-    getGrades: async (_, { limit = 20, nextCursor, semester }, { db }) => {
+    getGrades: async (_, { limit = 20, nextCursor, semester, studentId, studentName, department }, { db }) => {
       const startTime = performance.now();
       const query = {};
       if (nextCursor) {
@@ -17,6 +17,15 @@ const resolvers = {
       }
       if (semester) {
         query.semester = semester;
+      }
+      if (studentId) {
+        query.student_id = studentId;
+      }
+      if (studentName) {
+        query.student_name = { $regex: studentName, $options: 'i' };
+      }
+      if (department) {
+        query.department = department;
       }
 
       // Sort by descending ObjectId for predictable scrolling pagination
