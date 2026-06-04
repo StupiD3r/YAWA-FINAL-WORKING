@@ -67,7 +67,16 @@ const typeDefs = `#graphql
     getDepartmentSemesterTrends: [DepartmentTrend!]!
   }
 
-  # This is the missing piece Apollo is looking for!
+  input AddGradeInput {
+    student_id: String!
+    student_name: String!
+    department: String!
+    course_code: String!
+    semester: String!
+    grade: Float!
+    credits: Int!
+  }
+
   type Mutation {
     updateStudentGrade(
       student_id: String!
@@ -75,6 +84,7 @@ const typeDefs = `#graphql
       course_code: String!
       newGrade: Float!
     ): GradeRecord!
+    addGradeRecord(input: AddGradeInput!): GradeRecord!
   }
 `;
 

@@ -295,6 +295,43 @@ const resolvers = {
       await streamLogEvent('grade-mutations', 'GRADE_UPDATED', cleanRecord);
 
       return cleanRecord;
+    },
+
+    addGradeRecord: async (_, { input }, { db, redis }) => {
+      console.log(`📝 Processing grade insert for Student: ${input.student_id} | Course: ${input.course_code}`);
+
+      const existing = await db.collection('grades').findOne({
+        student_id: input.student_id,
+        course_code: input.course_code
+      });
+      if (existing) {
+        throw new Error(`Record already exists for student ${input.student_id} in course ${input.course_code}.`);
+      }
+
+      const doc = {
+        student_id: input.student_id,
+        student_name: input.student_name,
+        department: input.department,
+        course_code: input.course_code,
+        semester: input.semester,
+        grade: parseFloat(input.grade),
+        credits: parseInt(input.credits, 10),
+        updated_at: new Date().toISOString()
+      };
+
+      const result = await db.collection('grades').insertOne(doc);
+
+      if (redis) {
+        const cacheKey = `analytics:dept:${input.department.toLowerCase().replace(/ /g, '_')}`;
+        await redis.del(cacheKey);
+        console.log(`🧹 Cache cleared for key: ${cacheKey} due to insert mutation.`);
+      }
+
+      const inserted = { ...doc, _id: result.insertedId, id: result.insertedId.toString() };
+
+      await streamLogEvent('grade-mutations', 'GRADE_ADDED', inserted);
+
+      return inserted;
     }
   }
 };
