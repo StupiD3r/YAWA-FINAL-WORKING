@@ -219,6 +219,37 @@ const resolvers = {
         query.semester = semester;
       }
       return await db.collection('grades').countDocuments(query);
+    },
+
+    // 7. Grade distribution histogram
+    getGradeDistribution: async (_, __, { db }) => {
+      const pipeline = [
+        { $group: { _id: "$grade", count: { $sum: 1 } } },
+        { $sort: { _id: 1 } }
+      ];
+      const results = await db.collection('grades').aggregate(pipeline).toArray();
+      return results.map(r => ({ grade: r._id, count: r.count }));
+    },
+
+    // 8. Per-department semester trends for multi-line chart
+    getDepartmentSemesterTrends: async (_, __, { db }) => {
+      const pipeline = [
+        {
+          $group: {
+            _id: { department: "$department", semester: "$semester" },
+            averageGrade: { $avg: "$grade" },
+            totalCount: { $sum: 1 }
+          }
+        },
+        { $sort: { "_id.semester": 1, "_id.department": 1 } }
+      ];
+      const results = await db.collection('grades').aggregate(pipeline).toArray();
+      return results.map(r => ({
+        department: r._id.department,
+        semester: r._id.semester,
+        averageGrade: Math.round(r.averageGrade * 100) / 100,
+        totalCount: r.totalCount
+      }));
     }
   },
 

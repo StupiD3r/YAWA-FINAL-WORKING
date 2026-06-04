@@ -44,6 +44,18 @@ const typeDefs = `#graphql
     averageGrade: Float!
   }
 
+  type GradeDistribution {
+    grade: Float!
+    count: Int!
+  }
+
+  type DepartmentTrend {
+    department: String!
+    semester: String!
+    averageGrade: Float!
+    totalCount: Int!
+  }
+
   type Query {
     getGrades(limit: Int, nextCursor: String, semester: String, studentId: String, studentName: String, department: String): GradeResponse!
     getDepartmentAnalytics(department: String!): ShardStats!
@@ -51,6 +63,8 @@ const typeDefs = `#graphql
     searchStudentById(student_id: String!, limit: Int, nextCursor: String): GradeResponse!
     getSemesterAnalytics: [SemesterStats!]!
     getAtRiskCount(semester: String): Int!
+    getGradeDistribution: [GradeDistribution!]!
+    getDepartmentSemesterTrends: [DepartmentTrend!]!
   }
 
   # This is the missing piece Apollo is looking for!

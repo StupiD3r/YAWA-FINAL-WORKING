@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell, Legend, LineChart, Line } from 'recharts';
 
 const API = 'http://localhost:4000/graphql';
 
@@ -45,6 +45,8 @@ const UserDashboard = ({ onGoBack }) => {
 
   const [deptStats, setDeptStats] = useState([]);
   const [semesterStats, setSemesterStats] = useState([]);
+  const [gradeDistribution, setGradeDistribution] = useState([]);
+  const [deptTrends, setDeptTrends] = useState([]);
   const [students, setStudents] = useState([]);
 
   const [searchId, setSearchId] = useState('');
@@ -84,6 +86,7 @@ const UserDashboard = ({ onGoBack }) => {
   const [filterStudentName, setFilterStudentName] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterSemester, setFilterSemester] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'student_id', direction: 'asc' });
 
   const filterVersionRef = useRef(0);
 
@@ -100,15 +103,19 @@ const UserDashboard = ({ onGoBack }) => {
   const fetchOverview = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [deptData, semData] = await Promise.all([
+      const [deptData, semData, distData, trendsData] = await Promise.all([
         Promise.all(DEPARTMENTS.map(dept =>
           gql(`{ getDepartmentAnalytics(department: "${dept}") { totalCount averageGrade timing { totalTimeMs cacheHit } } }`)
             .then(d => ({ department: dept, ...d.getDepartmentAnalytics }))
         )),
-        gql(`{ getSemesterAnalytics { semester totalCount averageGrade } }`).then(d => d.getSemesterAnalytics)
+        gql(`{ getSemesterAnalytics { semester totalCount averageGrade } }`).then(d => d.getSemesterAnalytics),
+        gql(`{ getGradeDistribution { grade count } }`).then(d => d.getGradeDistribution),
+        gql(`{ getDepartmentSemesterTrends { department semester averageGrade totalCount } }`).then(d => d.getDepartmentSemesterTrends),
       ]);
       setDeptStats(deptData);
       setSemesterStats(semData);
+      setGradeDistribution(distData);
+      setDeptTrends(trendsData);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }, []);
@@ -263,6 +270,13 @@ const UserDashboard = ({ onGoBack }) => {
     } catch (e) { setError(e.message); setUpdating(null); }
   };
 
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
   const handleGradeNext = () => {
     const nextPage = gradePage + 1;
     gradeCursors.current[nextPage] = gradeNextCursor;
@@ -367,14 +381,95 @@ const UserDashboard = ({ onGoBack }) => {
           </ResponsiveContainer>
         </div>
       </div>
+
+      <div className="charts-row">
+        <div className="chart-card">
+          <h3>Grade Distribution</h3>
+          <p className="chart-subtitle">Number of records per grade value</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={gradeDistribution} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+              <XAxis dataKey="grade" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--chart-cursor)' }} />
+              <Bar dataKey="count" fill="var(--accent)" radius={[6, 6, 0, 0]} maxBarSize={40} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="chart-card">
+          <h3>Records per Department</h3>
+          <p className="chart-subtitle">Distribution of records across departments</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie data={deptStats} dataKey="totalCount" nameKey="department" cx="50%" cy="50%" outerRadius={90} innerRadius={50} paddingAngle={3}>
+                {deptStats.map((_, i) => (
+                  <Cell key={i} fill={['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'][i % 6]} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="charts-row">
+        <div className="chart-card wide">
+          <h3>Department Grade Trends by Semester</h3>
+          <p className="chart-subtitle">Average grade trajectory per department over time</p>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={deptTrends.reduce((acc, curr) => {
+              let row = acc.find(r => r.semester === curr.semester);
+              if (!row) { row = { semester: curr.semester }; acc.push(row); }
+              row[curr.department] = curr.averageGrade;
+              return acc;
+            }, [])} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+              <XAxis dataKey="semester" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 4]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {DEPARTMENTS.map((dept, i) => (
+                <Line key={dept} type="monotone" dataKey={dept} stroke={['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'][i % 6]} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 
   const renderSubjectAnalytics = () => {
     const sortedStudents = [...students].sort((a, b) => {
-      const na = parseInt(a.student_id.replace(/\D/g, ''), 10);
-      const nb = parseInt(b.student_id.replace(/\D/g, ''), 10);
-      return na - nb;
+      const dir = sortConfig.direction === 'asc' ? 1 : -1;
+      let valA, valB;
+      switch (sortConfig.key) {
+        case 'student_id':
+          valA = parseInt(a.student_id.replace(/\D/g, ''), 10);
+          valB = parseInt(b.student_id.replace(/\D/g, ''), 10);
+          break;
+        case 'student_name':
+          valA = a.student_name.toLowerCase();
+          valB = b.student_name.toLowerCase();
+          break;
+        case 'department':
+          valA = a.department.toLowerCase();
+          valB = b.department.toLowerCase();
+          break;
+        case 'semester':
+          valA = a.semester;
+          valB = b.semester;
+          break;
+        case 'grade':
+          valA = Number(a.grade);
+          valB = Number(b.grade);
+          break;
+        default:
+          return 0;
+      }
+      if (valA < valB) return -1 * dir;
+      if (valA > valB) return 1 * dir;
+      return 0;
     });
 
     return (
@@ -417,11 +512,21 @@ const UserDashboard = ({ onGoBack }) => {
 
       <div className="dataset-showcase-box">
         <div className="showcase-table-header">
-          <div className="header-col-label">ID</div>
-          <div className="header-col-label">Student Name</div>
-          <div className="header-col-label">Department / Course</div>
-          <div className="header-col-label">Semester</div>
-          <div className="header-col-label">Grade</div>
+          <div className="header-col-label sortable" onClick={() => handleSort('student_id')}>
+            ID {sortConfig.key === 'student_id' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+          </div>
+          <div className="header-col-label sortable" onClick={() => handleSort('student_name')}>
+            Student Name {sortConfig.key === 'student_name' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+          </div>
+          <div className="header-col-label sortable" onClick={() => handleSort('department')}>
+            Department / Course {sortConfig.key === 'department' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+          </div>
+          <div className="header-col-label sortable" onClick={() => handleSort('semester')}>
+            Semester {sortConfig.key === 'semester' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+          </div>
+          <div className="header-col-label sortable" onClick={() => handleSort('grade')}>
+            Grade {sortConfig.key === 'grade' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+          </div>
         </div>
         {loading && (
           <div className="showcase-empty-state">

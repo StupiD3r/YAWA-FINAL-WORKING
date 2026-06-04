@@ -426,6 +426,16 @@ html, body {
   color: var(--text-main);
 }
 
+.chart-card.wide {
+  grid-column: 1 / -1;
+}
+
+.chart-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
 .chart-tooltip {
   background: var(--panel-bg);
   border: 1px solid var(--border-color);
@@ -527,6 +537,15 @@ html, body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.header-col-label.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.header-col-label.sortable:hover {
+  color: var(--primary);
 }
 
 .showcase-row {
