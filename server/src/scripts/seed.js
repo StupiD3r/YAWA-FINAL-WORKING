@@ -5,8 +5,9 @@ const URL = 'mongodb://localhost:27016'; // Points straight to your running Dock
 const DB_NAME = 'academic_analytics';
 const COLLECTION_NAME = 'grades';
 
-const TOTAL_RECORDS = 350000; 
-const BATCH_SIZE = 10000; // Increased batch size for faster insertion // Efficient batch size for local execution
+const TOTAL_RECORDS = 350000;
+const BATCH_SIZE = 10000;
+const NUM_STUDENTS = 5000; // Unique students; each gets multiple records with a consistent name
 
 const DEPARTMENTS = ['Computer Science', 'Data Science', 'Electrical Eng', 'Mechanical Eng', 'Mathematics', 'Physics'];
 const SEMESTERS = ['Fall 2024', 'Spring 2025', 'Fall 2025', 'Spring 2026'];
@@ -28,6 +29,12 @@ async function seedDatabase() {
     const db = client.db(DB_NAME);
     const collection = db.collection(COLLECTION_NAME);
 
+    // Pre-generate a pool of unique students with fixed names
+    const students = Array.from({ length: NUM_STUDENTS }, () => ({
+      student_id: `STU${faker.number.int({ min: 100000, max: 999999 })}`,
+      student_name: faker.person.fullName(),
+    }));
+
     let insertedCount = 0;
     const startTime = Date.now();
 
@@ -36,13 +43,14 @@ async function seedDatabase() {
       const currentBatchSize = Math.min(BATCH_SIZE, TOTAL_RECORDS - insertedCount);
 
       for (let i = 0; i < currentBatchSize; i++) {
+        const { student_id, student_name } = students[Math.floor(Math.random() * students.length)];
         const dept = DEPARTMENTS[Math.floor(Math.random() * DEPARTMENTS.length)];
         const courseList = COURSES[dept];
         const course = courseList[Math.floor(Math.random() * courseList.length)];
-        
+
         const gradeDocument = {
-          student_id: `STU${faker.number.int({ min: 100000, max: 999999 })}`,
-          student_name: faker.person.fullName(),
+          student_id,
+          student_name,
           department: dept,
           course_code: course,
           semester: SEMESTERS[Math.floor(Math.random() * SEMESTERS.length)],
@@ -54,9 +62,8 @@ async function seedDatabase() {
         operations.push({ insertOne: { document: gradeDocument } });
       }
 
-      // MongoDB automatically processes these in parallel across your sharded cluster nodes
       await collection.bulkWrite(operations, { ordered: false });
-      
+
       insertedCount += currentBatchSize;
       const progress = ((insertedCount / TOTAL_RECORDS) * 100).toFixed(2);
       console.log(`Progress: ${progress}% | Total Processed: ${insertedCount} docs`);

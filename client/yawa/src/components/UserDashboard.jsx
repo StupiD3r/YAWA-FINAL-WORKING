@@ -48,6 +48,7 @@ const UserDashboard = ({ onGoBack }) => {
   const [students, setStudents] = useState([]);
 
   const [searchId, setSearchId] = useState('');
+  const searchIdRef = useRef('');
   const [reportLoading, setReportLoading] = useState(false);
   const [updating, setUpdating] = useState(null);
   const [updateSuccess, setUpdateSuccess] = useState(null);
@@ -84,8 +85,7 @@ const UserDashboard = ({ onGoBack }) => {
   const [filterDept, setFilterDept] = useState('');
   const [filterSemester, setFilterSemester] = useState('');
 
-  const searchTimeoutRef = useRef(null);
-  const subjectFilterTimeout = useRef(null);
+  const filterVersionRef = useRef(0);
 
   useEffect(() => {
     if (darkMode) {
@@ -123,11 +123,13 @@ const UserDashboard = ({ onGoBack }) => {
   };
 
   const fetchGrades = useCallback(async (cursor, studentId, studentName, dept, sem) => {
+    const version = ++filterVersionRef.current;
     setLoading(true); setError(null);
     try {
       const cursorArg = cursor ? `, nextCursor: "${cursor}"` : '';
       const filterArg = buildFilterArgs(studentId || '', studentName || '', dept || '', sem || '');
       const data = await gql(`{ getGrades(limit: 100${cursorArg}${filterArg}) { records { student_id student_name department course_code semester grade } nextCursor hasMore } }`);
+      if (version !== filterVersionRef.current) return;
       setStudents(data.getGrades.records);
       setGradeNextCursor(data.getGrades.nextCursor);
       setGradeHasMore(data.getGrades.hasMore);
@@ -158,12 +160,9 @@ const UserDashboard = ({ onGoBack }) => {
   }, []);
 
   const subjectFetch = useCallback((sid, sname, dept, sem) => {
-    if (subjectFilterTimeout.current) clearTimeout(subjectFilterTimeout.current);
-    subjectFilterTimeout.current = setTimeout(() => {
-      setGradePage(1);
-      gradeCursors.current = { 1: null };
-      fetchGrades(null, sid, sname, dept, sem);
-    }, 350);
+    setGradePage(1);
+    gradeCursors.current = { 1: null };
+    fetchGrades(null, sid, sname, dept, sem);
   }, [fetchGrades]);
 
   useEffect(() => {
@@ -213,7 +212,8 @@ const UserDashboard = ({ onGoBack }) => {
   }, [activeTab]);
 
   const handleStudentSearch = async (cursor) => {
-    if (!searchId.trim()) {
+    const term = searchIdRef.current.trim();
+    if (!term) {
       setReportResults(null);
       return;
     }
@@ -224,7 +224,10 @@ const UserDashboard = ({ onGoBack }) => {
     }
     try {
       const cursorArg = cursor ? `, nextCursor: "${cursor}"` : '';
-      const data = await gql(`{ searchStudentById(student_id: "${searchId.trim()}", limit: 100${cursorArg}) { records { id student_id student_name department course_code semester grade credits } nextCursor hasMore } }`);
+      const data = await gql(`{ searchStudentById(student_id: "${term}", limit: 100${cursorArg}) { records { id student_id student_name department course_code semester grade credits } nextCursor hasMore } }`);
+
+      if (term !== searchIdRef.current.trim()) return;
+
       setReportResults(data.searchStudentById.records);
       setReportNextCursor(data.searchStudentById.nextCursor);
       setReportHasMore(data.searchStudentById.hasMore);
@@ -236,14 +239,12 @@ const UserDashboard = ({ onGoBack }) => {
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchId(val);
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => {
-      if (val.trim()) {
-        handleStudentSearch();
-      } else {
-        setReportResults(null);
-      }
-    }, 350);
+    searchIdRef.current = val;
+    if (val.trim()) {
+      handleStudentSearch();
+    } else {
+      setReportResults(null);
+    }
   };
 
   const handleGradeUpdate = async (student_id, department, course_code) => {
@@ -452,27 +453,13 @@ const UserDashboard = ({ onGoBack }) => {
       <div className="student-search-section">
         <div className="search-input-wrap">
           <label className="search-label">Student ID</label>
-          <div className="search-row">
-            <input
-              type="text"
-              className="search-field"
-              value={searchId}
-              onChange={handleSearchChange}
-              placeholder="Type student ID..."
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-                  handleStudentSearch();
-                }
-              }}
-            />
-            <button className="search-button" onClick={() => {
-              if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-              handleStudentSearch();
-            }} disabled={reportLoading}>
-              {reportLoading ? '...' : 'Search'}
-            </button>
-          </div>
+          <input
+            type="text"
+            className="search-field"
+            value={searchId}
+            onChange={handleSearchChange}
+            placeholder="Type student ID..."
+          />
           <span className="search-helper">Results update progressively as you type</span>
         </div>
         {error && <div className="search-error-inline">{error}</div>}

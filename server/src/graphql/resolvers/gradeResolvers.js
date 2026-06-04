@@ -19,7 +19,7 @@ const resolvers = {
         query.semester = semester;
       }
       if (studentId) {
-        query.student_id = studentId;
+        query.student_id = { $regex: `^${studentId}`, $options: 'i' };
       }
       if (studentName) {
         query.student_name = { $regex: studentName, $options: 'i' };
@@ -159,10 +159,10 @@ const resolvers = {
       return records.map(r => ({ ...r, id: r._id.toString() }));
     },
 
-    // 4. Search by student ID across all departments (no department filter)
+    // 4. Search by student ID prefix across all departments (progressive filtering)
     searchStudentById: async (_, { student_id, limit = 100, nextCursor }, { db }) => {
       const startTime = performance.now();
-      const query = { student_id };
+      const query = { student_id: { $regex: `^${student_id}`, $options: 'i' } };
       if (nextCursor) {
         try {
           query._id = { $lt: new ObjectId(nextCursor) };
