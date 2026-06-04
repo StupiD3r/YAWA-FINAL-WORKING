@@ -479,14 +479,6 @@ const UserDashboard = ({ onGoBack }) => {
           <h2>Student Course Records</h2>
           <p className="pane-desc">Filter records — results update as you type.</p>
         </div>
-        <div className="kpi-card compact">
-          <h3>Overall Grade Average:</h3>
-          <div className="kpi-value">
-            {students.length > 0
-              ? (students.reduce((a, c) => a + Number(c.grade), 0) / students.length).toFixed(2)
-              : '0.0'} GPA
-          </div>
-        </div>
       </div>
 
       <div className="filter-bar">
