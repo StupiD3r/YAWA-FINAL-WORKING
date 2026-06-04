@@ -55,6 +55,7 @@ const UserDashboard = ({ onGoBack }) => {
 
   const [atRiskStudents, setAtRiskStudents] = useState([]);
   const [streamLog, setStreamLog] = useState([]);
+  const [streamConnected, setStreamConnected] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
   const streamRef = useRef(null);
 
@@ -191,6 +192,8 @@ const UserDashboard = ({ onGoBack }) => {
   useEffect(() => {
     if (activeTab === 'streams') {
       const evtSource = new EventSource('http://localhost:4001/stream');
+      setStreamConnected(false);
+      evtSource.onopen = () => setStreamConnected(true);
       evtSource.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -201,7 +204,7 @@ const UserDashboard = ({ onGoBack }) => {
           });
         } catch { }
       };
-      evtSource.onerror = () => {};
+      evtSource.onerror = () => { setStreamConnected(false); };
       streamRef.current = evtSource;
       return () => evtSource.close();
     } else {
@@ -419,8 +422,13 @@ const UserDashboard = ({ onGoBack }) => {
           <div className="header-col-label">Semester</div>
           <div className="header-col-label">Grade</div>
         </div>
-        {loading && <div className="showcase-empty-state"><div className="loading-spinner" /> Loading records...</div>}
-        {error && <div className="showcase-empty-state" style={{ color: '#f87171' }}>Error: {error}</div>}
+        {loading && (
+          <div className="showcase-empty-state">
+            <div className="loading-spinner" />
+            <span>Loading records...</span>
+          </div>
+        )}
+        {error && <div className="showcase-empty-state" style={{ color: '#ef4444' }}>Error: {error}</div>}
         {!loading && !error && sortedStudents.length === 0 && <div className="showcase-empty-state">No student records found.</div>}
         {!loading && !error && sortedStudents.map((s, i) => (
           <div key={s.id || i} className="showcase-row">
@@ -575,7 +583,7 @@ const UserDashboard = ({ onGoBack }) => {
         </select>
       </div>
       <div className="dataset-showcase-box">
-        <div className="showcase-table-header">
+        <div className="showcase-table-header at-risk-header">
           <div className="header-col-label">ID</div>
           <div className="header-col-label">Student Name</div>
           <div className="header-col-label">Department</div>
@@ -583,11 +591,11 @@ const UserDashboard = ({ onGoBack }) => {
           <div className="header-col-label">Semester</div>
           <div className="header-col-label">Grade</div>
         </div>
-        {loading && <div className="showcase-empty-state"><div className="loading-spinner" /> Analyzing...</div>}
-        {error && <div className="showcase-empty-state" style={{ color: '#f87171' }}>Error: {error}</div>}
+        {loading && <div className="showcase-empty-state"><div className="loading-spinner" /><span>Analyzing at-risk records...</span></div>}
+        {error && <div className="showcase-empty-state" style={{ color: '#ef4444' }}>Error: {error}</div>}
         {!loading && !error && atRiskStudents.length === 0 && <div className="showcase-empty-state">No at-risk students found.</div>}
         {!loading && !error && atRiskStudents.map((s, i) => (
-          <div key={s.id || i} className="showcase-row">
+          <div key={s.id || i} className="showcase-row at-risk-row">
             <div className="cell-id">{s.student_id}</div>
             <div className="cell-name">{s.student_name}</div>
             <div className="cell-dept">{s.department}</div>
@@ -604,7 +612,13 @@ const UserDashboard = ({ onGoBack }) => {
   const renderStreams = () => (
     <div className="content-pane">
       <h2>Event Streams</h2>
-      <p className="pane-desc">Real-time grade mutation events broadcast over Apache Kafka.</p>
+      <p className="pane-desc stream-has-status">
+        <span>Real-time grade mutation events broadcast over Apache Kafka.</span>
+        <span className="stream-status">
+          <span className={`stream-dot ${streamConnected ? 'connected' : 'disconnected'}`} />
+          <span className="stream-status-text">{streamConnected ? 'Connected' : 'Disconnected'}</span>
+        </span>
+      </p>
       <div className="dataset-showcase-box stream-box">
         {streamLog.length === 0 && (
           <div className="stream-empty">
