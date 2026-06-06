@@ -652,7 +652,7 @@ const UserDashboard = ({ onGoBack }) => {
       <div className="pane-header-row">
         <div>
           <h2>At-Risk & Trends</h2>
-          <p className="pane-desc">Students with grades below 2.0 — flagged for intervention.</p>
+          <p className="pane-desc">Students with grades below 3.0 — flagged for intervention.</p>
         </div>
         <div className="kpi-card compact risk">
           <h3>At-Risk Students:</h3>
